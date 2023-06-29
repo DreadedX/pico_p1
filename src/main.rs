@@ -15,7 +15,7 @@ use embassy_rp::{
     uart::{self, BufferedUartRx, Parity},
 };
 
-use embedded_io::asynch::Read;
+use embedded_io::asynch::{Read, Write};
 
 use embassy_sync::{
     blocking_mutex::raw::NoopRawMutex,
@@ -274,24 +274,25 @@ async fn main(spawner: Spawner) {
                     warn!("Read error: {:?}", e);
                 }
                 Either::Second(readout) => {
-                    let telegram = readout.to_telegram().unwrap();
+                    socket.write_all(&readout.buffer).await.unwrap();
 
-                    debug!("checksum: {}", telegram.checksum);
-                    debug!("prefix: {}", telegram.prefix);
-                    debug!("identification: {}", telegram.identification);
-
-                    let state = dsmr5::Result::<dsmr5::state::State>::from(&telegram).unwrap();
-                    debug!("datetime: {}", state.datetime.unwrap().year);
-                    debug!("meterreadings[0]: {}", state.meterreadings[0].to.unwrap());
-                    debug!("meterreadings[1]: {}", state.meterreadings[1].to.unwrap());
-
-                    debug!("slave:");
-                    debug!("\tdevice_type: {}", state.slaves[0].device_type.unwrap());
-                    debug!(
-                        "\tmeter_reading: {}",
-                        state.slaves[0].meter_reading.as_ref().unwrap().1
-                    );
-
+                    // let telegram = readout.to_telegram().unwrap();
+                    //
+                    // debug!("checksum: {}", telegram.checksum);
+                    // debug!("prefix: {}", telegram.prefix);
+                    // debug!("identification: {}", telegram.identification);
+                    //
+                    // let state = dsmr5::Result::<dsmr5::state::State>::from(&telegram).unwrap();
+                    // debug!("datetime: {}", state.datetime.unwrap().year);
+                    // debug!("meterreadings[0]: {}", state.meterreadings[0].to.unwrap());
+                    // debug!("meterreadings[1]: {}", state.meterreadings[1].to.unwrap());
+                    //
+                    // debug!("slave:");
+                    // debug!("\tdevice_type: {}", state.slaves[0].device_type.unwrap());
+                    // debug!(
+                    //     "\tmeter_reading: {}",
+                    //     state.slaves[0].meter_reading.as_ref().unwrap().1
+                    // );
                 }
                 // Either::Second(message) => match socket.write(&message).await {
                 //     Ok(_) => {}
