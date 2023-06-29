@@ -247,7 +247,7 @@ async fn main(spawner: Spawner) {
         let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
         // socket.set_timeout(Some(Duration::from_secs(10)));
 
-        control.gpio_set(0, false).await;
+        control.gpio_set(0, true).await;
         let port = 1234;
         info!("Listening on {}:{}...", ip, port);
 
@@ -257,7 +257,9 @@ async fn main(spawner: Spawner) {
         }
 
         info!("Received connection from {:?}", socket.remote_endpoint());
-        control.gpio_set(0, true).await;
+        control.gpio_set(0, false).await;
+
+        socket.write_all("Connected!\n".as_bytes()).await.unwrap();
 
         loop {
             match select(socket.read(&mut [0; 64]), receiver.recv()).await {
