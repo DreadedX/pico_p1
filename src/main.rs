@@ -11,11 +11,12 @@ use embassy_net::{tcp::TcpSocket, Ipv4Address, Ipv4Cidr, Stack, StackResources};
 use embassy_rp::{
     bind_interrupts, gpio,
     peripherals::{DMA_CH0, PIN_23, PIN_25, PIO0, UART0},
-    pio::Pio,
+    pio::{self, Pio},
     uart::{self, BufferedUartRx, Parity},
 };
+use embassy_time::{Duration, Ticker};
 
-use embedded_io::asynch::{Read, Write};
+use embedded_io_async::Read;
 
 use embassy_sync::{
     blocking_mutex::raw::NoopRawMutex,
@@ -23,12 +24,15 @@ use embassy_sync::{
 };
 use gpio::{Level, Output};
 use heapless::Vec;
+use rand::{rngs::SmallRng, RngCore, SeedableRng};
+use rust_mqtt::client::{client::MqttClient, client_config::ClientConfig};
 use static_cell::make_static;
 
 use {defmt_rtt as _, panic_probe as _};
 
 bind_interrupts!(struct Irqs {
     UART0_IRQ => uart::BufferedInterruptHandler<UART0>;
+    PIO0_IRQ_0 => pio::InterruptHandler<PIO0>;
 });
 
 #[derive(Format)]
@@ -142,42 +146,11 @@ async fn main(spawner: Spawner) {
 
     spawner.spawn(uart_rx_task(rx, channel.sender())).unwrap();
 
-    // === USB SERIAL ===
-    // let driver = Driver::new(p.USB, Irqs);
-    //
-    // let mut config = Config::new(0xc0de, 0xcafe);
-    // config.manufacturer = Some("huizinga.dev");
-    // config.product = Some("Raspberry Pi Pico");
-    // config.serial_number = Some("123456789");
-    // config.max_power = 0;
-    // config.max_packet_size_0 = 64;
-    //
-    // // Needed for windows compatiblilty
-    // config.device_class = 0xEF;
-    // config.device_sub_class = 0x02;
-    // config.device_protocol = 0x01;
-    // config.composite_with_iads = true;
-    //
-    // let mut builder = Builder::new(
-    //     driver,
-    //     config,
-    //     singleton!([0; 256]),
-    //     singleton!([0; 256]),
-    //     singleton!([0; 256]),
-    //     singleton!([0; 64]),
-    // );
-    //
-    // let class = CdcAcmClass::new(&mut builder, singleton!(State::new()), 64);
-    // let usb = builder.build();
-    //
-    // spawner.spawn(usb_task(usb)).unwrap();
-    // spawner.spawn(echo_task(class, channel.sender())).unwrap();
-
     // === WIFI ===
     // To make flashing faster for development, you may want to flash the firmwares independently
     // at hardcoded addresses, instead of baking them into the program with `include_bytes!`:
-    //     probe-rs-cli download 43439A0.bin --format bin --chip RP2040 --base-address 0x10100000
-    //     probe-rs-cli download 43439A0_clm.bin --format bin --chip RP2040 --base-address 0x10140000
+    //     probe-rs download 43439A0.bin --format bin --chip RP2040 --base-address 0x10100000
+    //     probe-rs download 43439A0_clm.bin --format bin --chip RP2040 --base-address 0x10140000
     let fw = unsafe { core::slice::from_raw_parts(0x10100000 as *const u8, 224190) };
     let clm = unsafe { core::slice::from_raw_parts(0x10140000 as *const u8, 4752) };
     // let fw = include_bytes!("../firmware/43439A0.bin");
@@ -186,7 +159,7 @@ async fn main(spawner: Spawner) {
     let pwr = Output::new(p.PIN_23, Level::Low);
     let cs = Output::new(p.PIN_25, Level::High);
 
-    let mut pio = Pio::new(p.PIO0);
+    let mut pio = Pio::new(p.PIO0, Irqs);
     let spi = PioSpi::new(
         &mut pio.common,
         pio.sm0,
@@ -206,16 +179,23 @@ async fn main(spawner: Spawner) {
         .set_power_management(cyw43::PowerManagementMode::PowerSave)
         .await;
 
-    let ip = Ipv4Address::new(10, 0, 0, 77);
+    // Turn LED on while trying to connect
+    control.gpio_set(0, true).await;
 
-    // let config = embassy_net::Config::Dhcp(Default::default());
-    let config = embassy_net::Config::Static(embassy_net::StaticConfig {
+    // let config = embassy_net::Config::dhcpv4(Default::default());
+    let ip = Ipv4Address::new(10, 0, 0, 77);
+    let config = embassy_net::Config::ipv4_static(embassy_net::StaticConfigV4 {
         address: Ipv4Cidr::new(ip, 24),
-        dns_servers: Vec::new(),
         gateway: Some(Ipv4Address::new(10, 0, 0, 1)),
+        dns_servers: Vec::new(),
     });
 
-    let seed = 0x51ac_3101_6468_8cdf;
+    let mut seed = [0; 8];
+    // TODO: Make the seed actually random?
+    let mut rng = SmallRng::seed_from_u64(0x51ac_3101_6468_8cdf);
+    rng.fill_bytes(&mut seed);
+    let seed = u64::from_le_bytes(seed);
+
     let stack = make_static!(Stack::new(
         net_device,
         config,
@@ -241,99 +221,63 @@ async fn main(spawner: Spawner) {
     let mut rx_buffer = [0; 4096];
     let mut tx_buffer = [0; 4096];
 
+    let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
+    // socket.set_timeout(Some(Duration::from_secs(10)));
+    let addr = (Ipv4Address::new(10, 0, 0, 2), 1883);
+
+    while let Err(e) = socket.connect(addr).await {
+        warn!("Connect error: {:?}", e);
+        continue;
+    }
+    info!("TCP Connected!");
+
+    let mut config = ClientConfig::new(rust_mqtt::client::client_config::MqttVersion::MQTTv5, rng);
+
+    config.add_username("mqtt");
+    config.add_password("$x@w6t8ErHJwolSfVdkLqFUvxex5ZgeE");
+    config.add_max_subscribe_qos(rust_mqtt::packet::v5::publish_packet::QualityOfService::QoS1);
+    config.add_client_id("pico");
+    // Leads to InsufficientBufferSize error
+    // config.add_will("pico/test", b"disconnected", false);
+
+    let mut recv_buffer = [0; 4096];
+    let mut write_buffer = [0; 4096];
+
+    let mut client =
+        MqttClient::<_, 5, _>::new(socket, &mut write_buffer, &mut recv_buffer, config);
+
+    client.connect_to_broker().await.unwrap();
+    info!("MQTT Connected!");
+
+    // Turn LED off when connected
+    control.gpio_set(0, false).await;
+
+    let mut keep_alive = Ticker::every(Duration::from_secs(30));
     let receiver = channel.receiver();
 
     loop {
-        let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
-        // socket.set_timeout(Some(Duration::from_secs(10)));
+        match select(keep_alive.next(), receiver.receive()).await {
+            Either::First(_) => client.send_ping().await.unwrap(),
+            Either::Second(readout) => {
+                control.gpio_set(0, true).await;
+                control.gpio_set(0, false).await;
 
-        control.gpio_set(0, true).await;
-        let port = 1234;
-        info!("Listening on {}:{}...", ip, port);
+                let telegram = readout.to_telegram().unwrap();
+                let state = dsmr5::Result::<dsmr5::state::State>::from(&telegram).unwrap();
 
-        if let Err(e) = socket.accept(port).await {
-            warn!("Accept error: {:?}", e);
-            continue;
-        }
+                let msg: Vec<u8, 4096> = serde_json_core::to_vec(&state).unwrap();
+                info!("len: {}", msg.len());
 
-        info!("Received connection from {:?}", socket.remote_endpoint());
-        control.gpio_set(0, false).await;
-
-        socket.write_all("Connected!\n".as_bytes()).await.unwrap();
-
-        loop {
-            match select(socket.read(&mut [0; 64]), receiver.recv()).await {
-                Either::First(Ok(0)) => {
-                    warn!("Read OEF");
-                    break;
-                }
-                Either::First(Ok(_)) => {
-                    // Received something over the socket, currently does nothing
-                }
-                Either::First(Err(e)) => {
-                    warn!("Read error: {:?}", e);
-                }
-                Either::Second(readout) => {
-                    socket.write_all(&readout.buffer).await.unwrap();
-
-                    // let telegram = readout.to_telegram().unwrap();
-                    //
-                    // debug!("checksum: {}", telegram.checksum);
-                    // debug!("prefix: {}", telegram.prefix);
-                    // debug!("identification: {}", telegram.identification);
-                    //
-                    // let state = dsmr5::Result::<dsmr5::state::State>::from(&telegram).unwrap();
-                    // debug!("datetime: {}", state.datetime.unwrap().year);
-                    // debug!("meterreadings[0]: {}", state.meterreadings[0].to.unwrap());
-                    // debug!("meterreadings[1]: {}", state.meterreadings[1].to.unwrap());
-                    //
-                    // debug!("slave:");
-                    // debug!("\tdevice_type: {}", state.slaves[0].device_type.unwrap());
-                    // debug!(
-                    //     "\tmeter_reading: {}",
-                    //     state.slaves[0].meter_reading.as_ref().unwrap().1
-                    // );
-                }
-                // Either::Second(message) => match socket.write(&message).await {
-                //     Ok(_) => {}
-                //     Err(e) => {
-                //         warn!("Write error: {:?}", e);
-                //         break;
-                //     }
-                // },
+                client
+                    .send_message(
+                        "pico/test",
+                        &msg,
+                        rust_mqtt::packet::v5::publish_packet::QualityOfService::QoS0,
+                        false,
+                    )
+                    .await
+                    .unwrap();
             }
         }
     }
 }
-
-// struct Disconnected;
-//
-// impl From<EndpointError> for Disconnected {
-//     fn from(value: EndpointError) -> Self {
-//         match value {
-//             EndpointError::BufferOverflow => panic!("Buffer overflow"),
-//             EndpointError::Disabled => Self {},
-//         }
-//     }
-// }
-//
-// /// Echo back received packets
-// async fn echo<'d>(
-//     class: &mut CdcAcmClass<'d, Driver<'d, peripherals::USB>>,
-//     sender: &Sender<'static, NoopRawMutex, Message, 1>,
-// ) -> Result<(), Disconnected> {
-//     let mut buf = [0; 64];
-//     loop {
-//         let n = class.read_packet(&mut buf).await?;
-//         let data = from_utf8_mut(&mut buf[..n]).unwrap();
-//
-//         data.make_ascii_uppercase();
-//
-//         sender
-//             .send(Message {
-//                 data: buf,
-//                 length: n,
-//             })
-//             .await;
-//     }
-// }
