@@ -233,8 +233,8 @@ async fn main(spawner: Spawner) {
 
     let mut config = ClientConfig::new(rust_mqtt::client::client_config::MqttVersion::MQTTv5, rng);
 
-    config.add_username("mqtt");
-    config.add_password("$x@w6t8ErHJwolSfVdkLqFUvxex5ZgeE");
+    config.add_username(env!("MQTT_USERNAME"));
+    config.add_password(env!("MQTT_PASSWORD"));
     config.add_max_subscribe_qos(rust_mqtt::packet::v5::publish_packet::QualityOfService::QoS1);
     config.add_client_id("pico");
     // Leads to InsufficientBufferSize error
