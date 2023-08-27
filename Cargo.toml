@@ -64,6 +64,7 @@ rust-mqtt = { version = "0.1.5", features = [
 rand = { version = "0.8.5", features = [
 	"nightly",
 	"small_rng",
+	"std_rng",
 ], default-features = false }
 serde-json-core = "0.5.1"
 

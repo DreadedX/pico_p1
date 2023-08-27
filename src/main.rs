@@ -12,7 +12,9 @@ use embassy_futures::{
 };
 use embassy_net::{tcp::TcpSocket, Config, Ipv4Address, Stack, StackResources};
 use embassy_rp::{
-    bind_interrupts, gpio,
+    bind_interrupts,
+    clocks::RoscRng,
+    gpio,
     peripherals::{DMA_CH0, PIN_23, PIN_25, PIO0, UART0},
     pio::{self, Pio},
     uart::{self, BufferedUartRx, Parity},
@@ -27,7 +29,10 @@ use embassy_sync::{
 };
 use gpio::{Level, Output};
 use heapless::Vec;
-use rand::{rngs::SmallRng, RngCore, SeedableRng};
+use rand::{
+    rngs::{SmallRng, StdRng},
+    RngCore, SeedableRng,
+};
 use rust_mqtt::client::{client::MqttClient, client_config::ClientConfig};
 use static_cell::make_static;
 
@@ -187,17 +192,16 @@ async fn main(spawner: Spawner) {
 
     let config = Config::dhcpv4(Default::default());
 
-    let mut seed = [0; 8];
-    // TODO: Make the seed actually random?
-    let mut rng = SmallRng::seed_from_u64(0x51ac_3101_6468_8cdf);
-    rng.fill_bytes(&mut seed);
-    let seed = u64::from_le_bytes(seed);
+    // Use the Ring Oscillator of the RP2040 as a source of true randomness to seed the
+    // cryptographically secure PRNG
+    let mut rng_rosc = RoscRng;
+    let mut rng = StdRng::from_rng(&mut rng_rosc).unwrap();
 
     let stack = make_static!(Stack::new(
         net_device,
         config,
         make_static!(StackResources::<2>::new()),
-        seed,
+        rng.next_u64(),
     ));
 
     spawner.spawn(net_task(stack)).unwrap();
@@ -232,7 +236,12 @@ async fn main(spawner: Spawner) {
     }
     info!("TCP Connected!");
 
-    let mut config = ClientConfig::new(rust_mqtt::client::client_config::MqttVersion::MQTTv5, rng);
+    let mut config = ClientConfig::new(
+        rust_mqtt::client::client_config::MqttVersion::MQTTv5,
+        // Use fast and simple PRNG to generate packet identifiers, there is no need for this to be
+        // cryptographically secure
+        SmallRng::from_rng(&mut rng_rosc).unwrap(),
+    );
 
     config.add_username(env!("MQTT_USERNAME"));
     config.add_password(env!("MQTT_PASSWORD"));
