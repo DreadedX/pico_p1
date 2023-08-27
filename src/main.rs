@@ -6,8 +6,11 @@ use cyw43_pio::PioSpi;
 use defmt::{debug, info, warn, Format};
 use dsmr5::Readout;
 use embassy_executor::Spawner;
-use embassy_futures::select::{select, Either};
-use embassy_net::{tcp::TcpSocket, Ipv4Address, Ipv4Cidr, Stack, StackResources};
+use embassy_futures::{
+    select::{select, Either},
+    yield_now,
+};
+use embassy_net::{tcp::TcpSocket, Config, Ipv4Address, Stack, StackResources};
 use embassy_rp::{
     bind_interrupts, gpio,
     peripherals::{DMA_CH0, PIN_23, PIN_25, PIO0, UART0},
@@ -182,13 +185,7 @@ async fn main(spawner: Spawner) {
     // Turn LED on while trying to connect
     control.gpio_set(0, true).await;
 
-    // let config = embassy_net::Config::dhcpv4(Default::default());
-    let ip = Ipv4Address::new(10, 0, 0, 77);
-    let config = embassy_net::Config::ipv4_static(embassy_net::StaticConfigV4 {
-        address: Ipv4Cidr::new(ip, 24),
-        gateway: Some(Ipv4Address::new(10, 0, 0, 1)),
-        dns_servers: Vec::new(),
-    });
+    let config = Config::dhcpv4(Default::default());
 
     let mut seed = [0; 8];
     // TODO: Make the seed actually random?
@@ -217,6 +214,10 @@ async fn main(spawner: Spawner) {
             }
         }
     }
+
+    info!("Waiting for DHCP...");
+    let cfg = wait_for_config(stack).await;
+    info!("IP Address: {}", cfg.address.address());
 
     let mut rx_buffer = [0; 4096];
     let mut tx_buffer = [0; 4096];
@@ -279,5 +280,18 @@ async fn main(spawner: Spawner) {
                     .unwrap();
             }
         }
+    }
+}
+
+async fn wait_for_config(
+    stack: &'static Stack<cyw43::NetDriver<'static>>,
+) -> embassy_net::StaticConfigV4 {
+    loop {
+        // We are essentially busy looping here since there is no Async API for this
+        if let Some(config) = stack.config_v4() {
+            return config;
+        }
+
+        yield_now().await;
     }
 }
