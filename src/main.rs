@@ -19,7 +19,7 @@ use embassy_rp::{
     pio::{self, Pio},
     uart::{self, BufferedUartRx, Parity},
 };
-use embassy_time::{Duration, Ticker};
+use embassy_time::{Duration, Ticker, Timer};
 
 use embedded_io_async::Read;
 
@@ -232,7 +232,7 @@ async fn main(spawner: Spawner) {
 
     while let Err(e) = socket.connect(addr).await {
         warn!("Connect error: {:?}", e);
-        continue;
+        Timer::after(Duration::from_secs(1)).await;
     }
     info!("TCP Connected!");
 
