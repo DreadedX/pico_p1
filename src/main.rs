@@ -248,7 +248,7 @@ async fn main(spawner: Spawner) {
     config.add_max_subscribe_qos(rust_mqtt::packet::v5::publish_packet::QualityOfService::QoS1);
     config.add_client_id("pico");
     // Leads to InsufficientBufferSize error
-    // config.add_will("pico/test", b"disconnected", false);
+    config.add_will("pico/test", b"disconnected", false);
 
     let mut recv_buffer = [0; 4096];
     let mut write_buffer = [0; 4096];
@@ -258,6 +258,16 @@ async fn main(spawner: Spawner) {
 
     client.connect_to_broker().await.unwrap();
     info!("MQTT Connected!");
+
+    client
+        .send_message(
+            "pico/test",
+            b"connected",
+            rust_mqtt::packet::v5::publish_packet::QualityOfService::QoS0,
+            false,
+        )
+        .await
+        .unwrap();
 
     // Turn LED off when connected
     control.gpio_set(0, false).await;
