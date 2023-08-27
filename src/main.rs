@@ -139,7 +139,7 @@ async fn uart_rx_task(
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    info!("Hello world!");
+    info!("Starting...");
     let p = embassy_rp::init(Default::default());
 
     let channel = make_static!(Channel::<NoopRawMutex, Readout, 1>::new());
