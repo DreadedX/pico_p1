@@ -48,24 +48,6 @@ struct Test {
     counter: u32,
 }
 
-// #[embassy_executor::task]
-// async fn usb_task(mut device: UsbDevice<'static, Driver<'static, peripherals::USB>>) -> ! {
-//     device.run().await
-// }
-
-// #[embassy_executor::task]
-// async fn echo_task(
-//     mut class: CdcAcmClass<'static, Driver<'static, peripherals::USB>>,
-//     sender: Sender<'static, NoopRawMutex, Message, 1>,
-// ) -> ! {
-//     loop {
-//         class.wait_connection().await;
-//         info!("Connected");
-//         let _ = echo(&mut class, &sender).await;
-//         info!("Disconnected");
-//     }
-// }
-
 #[embassy_executor::task]
 async fn wifi_task(
     runner: cyw43::Runner<
