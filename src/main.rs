@@ -2,6 +2,8 @@
 #![no_main]
 #![feature(type_alias_impl_trait)]
 
+use core::str::FromStr;
+
 use cyw43_pio::PioSpi;
 use defmt::{debug, info, warn, Format};
 use dsmr5::Readout;
@@ -210,7 +212,7 @@ async fn main(spawner: Spawner) {
 
     let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
     // socket.set_timeout(Some(Duration::from_secs(10)));
-    let addr = (Ipv4Address::new(10, 0, 0, 2), 1883);
+    let addr = (Ipv4Address::from_str(env!("MQTT_IP")).unwrap(), 1883);
 
     while let Err(e) = socket.connect(addr).await {
         warn!("Connect error: {:?}", e);
