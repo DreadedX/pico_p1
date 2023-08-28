@@ -12,7 +12,7 @@ use embassy_futures::{
     select::{select, Either},
     yield_now,
 };
-use embassy_net::{tcp::TcpSocket, Config, Ipv4Address, Stack, StackResources};
+use embassy_net::{tcp::TcpSocket, Config, IpEndpoint, Stack, StackResources};
 use embassy_rp::{
     bind_interrupts,
     clocks::RoscRng,
@@ -212,7 +212,7 @@ async fn main(spawner: Spawner) {
 
     let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
     // socket.set_timeout(Some(Duration::from_secs(10)));
-    let addr = (Ipv4Address::from_str(env!("MQTT_IP")).unwrap(), 1883);
+    let addr = IpEndpoint::from_str(env!("MQTT_ADDRESS")).unwrap();
 
     while let Err(e) = socket.connect(addr).await {
         warn!("Connect error: {:?}", e);
