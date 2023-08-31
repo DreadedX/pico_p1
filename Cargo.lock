@@ -376,9 +376,9 @@ checksum = "1aaf95b3e5c8f23aa320147307562d361db0ae0d51242340f558153b4eb2439b"
 
 [[package]]
 name = "dsmr5"
-version = "0.2.2"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f7b8dcac624a4bae4c257775a5845535d5d3b3c5b1201f335aa0d8fcbd62dc70"
+checksum = "7f33c828db9cdf93901b9d001a30a16609131ecc361a23a4d261aa5beede06f9"
 dependencies = [
  "crc16",
  "serde",

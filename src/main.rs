@@ -109,12 +109,15 @@ async fn get_readout(rx: &mut BufferedUartRx<'static, UART0>) -> Readout {
 #[embassy_executor::task]
 async fn uart_rx_task(
     mut rx: BufferedUartRx<'static, UART0>,
-    sender: Sender<'static, NoopRawMutex, Readout, 1>,
+    sender: Sender<'static, NoopRawMutex, dsmr5::state::State, 1>,
 ) {
     info!("Wating for serial data");
     loop {
         let readout = get_readout(&mut rx).await;
-        match sender.try_send(readout) {
+        let telegram = &readout.to_telegram().unwrap();
+        let state = telegram.try_into().unwrap();
+
+        match sender.try_send(state) {
             Ok(_) => {}
             Err(_) => warn!("Queue is full!"),
         }
@@ -126,7 +129,7 @@ async fn main(spawner: Spawner) {
     info!("Starting...");
     let p = embassy_rp::init(Default::default());
 
-    let channel = make_static!(Channel::<NoopRawMutex, Readout, 1>::new());
+    let channel = make_static!(Channel::<NoopRawMutex, _, 1>::new());
 
     // === UART ===
     let mut config = uart::Config::default();
@@ -262,12 +265,10 @@ async fn main(spawner: Spawner) {
     loop {
         match select(keep_alive.next(), receiver.receive()).await {
             Either::First(_) => client.send_ping().await.unwrap(),
-            Either::Second(readout) => {
+            Either::Second(state) => {
+                // Blink the LED to show that a readout was received
                 control.gpio_set(0, true).await;
                 control.gpio_set(0, false).await;
-
-                let telegram = readout.to_telegram().unwrap();
-                let state = dsmr5::Result::<dsmr5::state::State>::from(&telegram).unwrap();
 
                 let msg: Vec<u8, 4096> = serde_json_core::to_vec(&state).unwrap();
                 info!("len: {}", msg.len());
