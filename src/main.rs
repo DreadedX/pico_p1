@@ -131,6 +131,36 @@ async fn uart_rx_task(
     }
 }
 
+/// Get the cyw43 firmware blobs
+///
+/// # Safety
+/// When building with `exclude_firmwares` make sure to flash the firmwares using the following
+/// commands:
+/// ```bash
+/// probe-rs download firmware/43439A0.bin --format bin --chip RP2040 --base-address 0x101BE000
+/// probe-rs download firmware/43439A0_clm.bin --format bin --chip RP2040 --base-address 0x101FE000
+/// ```
+unsafe fn get_firmware() -> (&'static [u8], &'static [u8]) {
+    cfg_if::cfg_if! {
+        if #[cfg(feature = "exclude_firmwares")] {
+            // TODO: It would be nice if it could automatically get the correct size
+            extern "C" {
+                #[link_name = "__fw_start"]
+                static fw: [u8; 230321];
+                #[link_name = "__clm_start"]
+                static clm: [u8; 4752];
+            }
+
+            (&fw, &clm)
+        } else {
+            let fw = include_bytes!("../firmware/43439A0.bin");
+            let clm = include_bytes!("../firmware/43439A0_clm.bin");
+
+            (fw, clm)
+        }
+    }
+}
+
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     info!("Starting...");
@@ -148,16 +178,6 @@ async fn main(spawner: Spawner) {
 
     spawner.spawn(uart_rx_task(rx, channel.sender())).unwrap();
 
-    // === WIFI ===
-    // To make flashing faster for development, you may want to flash the firmwares independently
-    // at hardcoded addresses, instead of baking them into the program with `include_bytes!`:
-    //     probe-rs download firmware/43439A0.bin --format bin --chip RP2040 --base-address 0x10100000
-    //     probe-rs download firmware/43439A0_clm.bin --format bin --chip RP2040 --base-address 0x10140000
-    let fw = unsafe { core::slice::from_raw_parts(0x10100000 as *const u8, 230321) };
-    let clm = unsafe { core::slice::from_raw_parts(0x10140000 as *const u8, 4752) };
-    // let fw = include_bytes!("../firmware/43439A0.bin");
-    // let clm = include_bytes!("../firmware/43439A0_clm.bin");
-
     let pwr = Output::new(p.PIN_23, Level::Low);
     let cs = Output::new(p.PIN_25, Level::High);
 
@@ -171,6 +191,8 @@ async fn main(spawner: Spawner) {
         p.PIN_29,
         p.DMA_CH0,
     );
+
+    let (fw, clm) = unsafe { get_firmware() };
 
     let state = make_static!(cyw43::State::new());
     let (net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw).await;

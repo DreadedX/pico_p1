@@ -67,6 +67,7 @@ rand = { version = "0.8.5", features = [
 	"std_rng",
 ], default-features = false }
 serde-json-core = "0.5.1"
+cfg-if = "1.0.0"
 
 [patch.crates-io]
 embassy-executor = { git = "https://github.com/embassy-rs/embassy" }
@@ -81,6 +82,11 @@ rust-mqtt = { path = "../rust-mqtt" }
 
 [build-dependencies]
 dotenvy = "0.15"
+
+[features]
+# With this feature enabled the cyw43 fiwmares are not included in the build and need to be manually flashed
+# This helps speed up development
+exclude_firmwares = []
 
 [profile.release]
 debug = true
