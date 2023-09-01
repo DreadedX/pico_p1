@@ -4,6 +4,7 @@
 
 use core::str::FromStr;
 
+use cyw43::PowerManagementMode;
 use cyw43_pio::PioSpi;
 use defmt::{debug, info, warn, Format};
 use dsmr5::Readout;
@@ -35,7 +36,13 @@ use rand::{
     rngs::{SmallRng, StdRng},
     RngCore, SeedableRng,
 };
-use rust_mqtt::client::{client::MqttClient, client_config::ClientConfig};
+use rust_mqtt::{
+    client::{
+        client::MqttClient,
+        client_config::{ClientConfig, MqttVersion},
+    },
+    packet::v5::publish_packet::QualityOfService,
+};
 use static_cell::make_static;
 
 use {defmt_rtt as _, panic_probe as _};
@@ -171,7 +178,7 @@ async fn main(spawner: Spawner) {
 
     control.init(clm).await;
     control
-        .set_power_management(cyw43::PowerManagementMode::PowerSave)
+        .set_power_management(PowerManagementMode::PowerSave)
         .await;
 
     // Turn LED on while trying to connect
@@ -224,7 +231,7 @@ async fn main(spawner: Spawner) {
     info!("TCP Connected!");
 
     let mut config = ClientConfig::new(
-        rust_mqtt::client::client_config::MqttVersion::MQTTv5,
+        MqttVersion::MQTTv5,
         // Use fast and simple PRNG to generate packet identifiers, there is no need for this to be
         // cryptographically secure
         SmallRng::from_rng(&mut rng_rosc).unwrap(),
@@ -232,10 +239,10 @@ async fn main(spawner: Spawner) {
 
     config.add_username(env!("MQTT_USERNAME"));
     config.add_password(env!("MQTT_PASSWORD"));
-    config.add_max_subscribe_qos(rust_mqtt::packet::v5::publish_packet::QualityOfService::QoS1);
+    config.add_max_subscribe_qos(QualityOfService::QoS1);
     config.add_client_id("pico");
     // Leads to InsufficientBufferSize error
-    config.add_will("pico/test", b"disconnected", false);
+    config.add_will("pico/test", b"disconnected", true);
 
     let mut recv_buffer = [0; 4096];
     let mut write_buffer = [0; 4096];
@@ -243,16 +250,12 @@ async fn main(spawner: Spawner) {
     let mut client =
         MqttClient::<_, 5, _>::new(socket, &mut write_buffer, &mut recv_buffer, config);
 
+    info!("Connecting to MQTT...");
     client.connect_to_broker().await.unwrap();
     info!("MQTT Connected!");
 
     client
-        .send_message(
-            "pico/test",
-            b"connected",
-            rust_mqtt::packet::v5::publish_packet::QualityOfService::QoS0,
-            false,
-        )
+        .send_message("pico/test", b"connected", QualityOfService::QoS0, true)
         .await
         .unwrap();
 
@@ -274,12 +277,7 @@ async fn main(spawner: Spawner) {
                 info!("len: {}", msg.len());
 
                 client
-                    .send_message(
-                        "pico/test",
-                        &msg,
-                        rust_mqtt::packet::v5::publish_packet::QualityOfService::QoS0,
-                        false,
-                    )
+                    .send_message("pico/test", &msg, QualityOfService::QoS0, false)
                     .await
                     .unwrap();
             }
