@@ -94,3 +94,5 @@ exclude_firmwares = []
 [profile.release]
 debug = true
 opt-level = 's'
+codegen-units = 1
+lto = true
