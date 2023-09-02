@@ -53,7 +53,7 @@ cyw43-pio = { git = "https://github.com/embassy-rs/embassy", features = [
 panic-probe = { version = "0.3", features = ["print-defmt"] }
 log = "0.4"
 static_cell = { version = "1.1", features = ["nightly"] }
-heapless = { version = "0.7.16", features = ["defmt"] }
+heapless = { version = "0.7.16", features = ["defmt", "serde"] }
 embedded-io-async = { version = "0.5", features = ["defmt-03"] }
 crc16 = "0.4"
 dsmr5 = "0.3"
@@ -68,6 +68,7 @@ rand = { version = "0.8.5", features = [
 	"std_rng",
 ], default-features = false }
 serde-json-core = "0.5.1"
+serde = { version = "1.0.188", default-features = false, features = ["derive"] }
 cfg-if = "1.0.0"
 
 [patch.crates-io]

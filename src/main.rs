@@ -6,11 +6,11 @@ use core::str::FromStr;
 
 use cyw43::PowerManagementMode;
 use cyw43_pio::PioSpi;
-use defmt::{debug, info, warn, Format};
+use defmt::{debug, error, info, warn, Format};
 use dsmr5::Readout;
 use embassy_executor::Spawner;
 use embassy_futures::{
-    select::{select, Either},
+    select::{select3, Either3},
     yield_now,
 };
 use embassy_net::{tcp::TcpSocket, Config, IpEndpoint, Stack, StackResources};
@@ -43,6 +43,7 @@ use rust_mqtt::{
     },
     packet::v5::publish_packet::QualityOfService,
 };
+use serde::Deserialize;
 use static_cell::make_static;
 
 use {defmt_rtt as _, panic_probe as _};
@@ -52,9 +53,9 @@ bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => pio::InterruptHandler<PIO0>;
 });
 
-#[derive(Format)]
-struct Test {
-    counter: u32,
+#[derive(Format, Deserialize)]
+struct UpdateMessage<'a> {
+    url: &'a str,
 }
 
 #[embassy_executor::task]
@@ -281,6 +282,8 @@ async fn main(spawner: Spawner) {
         .await
         .unwrap();
 
+    client.subscribe_to_topic("pico/test/update").await.unwrap();
+
     // Turn LED off when connected
     control.gpio_set(0, false).await;
 
@@ -288,20 +291,45 @@ async fn main(spawner: Spawner) {
     let receiver = channel.receiver();
 
     loop {
-        match select(keep_alive.next(), receiver.receive()).await {
-            Either::First(_) => client.send_ping().await.unwrap(),
-            Either::Second(state) => {
+        match select3(
+            keep_alive.next(),
+            receiver.receive(),
+            client.receive_message(),
+        )
+        .await
+        {
+            Either3::First(_) => client.send_ping().await.unwrap(),
+            Either3::Second(state) => {
                 // Blink the LED to show that a readout was received
                 control.gpio_set(0, true).await;
                 control.gpio_set(0, false).await;
 
-                let msg: Vec<u8, 4096> = serde_json_core::to_vec(&state).unwrap();
-                info!("len: {}", msg.len());
+                let msg: Vec<u8, 4096> = serde_json_core::to_vec(&state)
+                    .expect("The buffer should be large enough to contain all the data");
 
                 client
                     .send_message("pico/test", &msg, QualityOfService::QoS0, false)
                     .await
                     .unwrap();
+            }
+            Either3::Third(message) => {
+                let message = match message {
+                    Ok(message) => message,
+                    Err(err) => {
+                        error!("Failed to receive MQTT message: {}", err);
+                        continue;
+                    }
+                };
+
+                let message = match serde_json_core::from_slice::<UpdateMessage>(message.1) {
+                    Ok((message, _)) => message,
+                    Err(_) => {
+                        error!("Unable to parse update message");
+                        continue;
+                    }
+                };
+
+                info!("{}", message);
             }
         }
     }

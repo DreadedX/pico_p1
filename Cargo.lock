@@ -958,6 +958,7 @@ dependencies = [
  "defmt",
  "hash32",
  "rustc_version 0.4.0",
+ "serde",
  "spin",
  "stable_deref_trait",
 ]
@@ -1418,6 +1419,7 @@ dependencies = [
  "panic-probe",
  "rand",
  "rust-mqtt",
+ "serde",
  "serde-json-core",
  "static_cell",
 ]
