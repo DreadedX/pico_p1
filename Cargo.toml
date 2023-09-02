@@ -3,7 +3,8 @@ name = "rp"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[workspace]
+members = ["bootloader"]
 
 [dependencies]
 cortex-m = { version = "0.7", features = ["inline-asm"] }
@@ -78,6 +79,8 @@ embassy-net = { git = "https://github.com/embassy-rs/embassy" }
 embassy-sync = { git = "https://github.com/embassy-rs/embassy" }
 embassy-futures = { git = "https://github.com/embassy-rs/embassy" }
 
+embassy-boot-rp = { git = "https://github.com/embassy-rs/embassy" }
+
 rust-mqtt = { path = "../rust-mqtt" }
 
 [build-dependencies]
@@ -90,3 +93,4 @@ exclude_firmwares = []
 
 [profile.release]
 debug = true
+opt-level = 's'
