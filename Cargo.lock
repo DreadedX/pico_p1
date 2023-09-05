@@ -1104,6 +1104,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "43794a0ace135be66a25d3ae77d41b91615fb68ae937f904090203e81f755b65"
 
 [[package]]
+name = "nourl"
+version = "0.1.1"
+dependencies = [
+ "defmt",
+]
+
+[[package]]
 name = "num-traits"
 version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1416,11 +1423,13 @@ dependencies = [
  "embedded-io-async",
  "heapless",
  "log",
+ "nourl",
  "panic-probe",
  "rand",
  "rust-mqtt",
  "serde",
  "serde-json-core",
+ "smoltcp",
  "static_cell",
 ]
 

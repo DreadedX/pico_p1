@@ -2,40 +2,37 @@
 #![no_main]
 #![feature(type_alias_impl_trait)]
 
-use core::str::FromStr;
-
-use cyw43::PowerManagementMode;
-use cyw43_pio::PioSpi;
-use defmt::{debug, error, info, warn, Format};
-use dsmr5::Readout;
-use embassy_executor::Spawner;
-use embassy_futures::{
-    select::{select3, Either3},
-    yield_now,
-};
-use embassy_net::{tcp::TcpSocket, Config, IpEndpoint, Stack, StackResources};
-use embassy_rp::{
-    bind_interrupts,
-    clocks::RoscRng,
-    gpio,
-    peripherals::{DMA_CH0, PIN_23, PIN_25, PIO0, UART0},
-    pio::{self, Pio},
-    uart::{self, BufferedUartRx, Parity},
-};
-use embassy_time::{Duration, Ticker, Timer};
-
-use embedded_io_async::Read;
-
-use embassy_sync::{
-    blocking_mutex::raw::NoopRawMutex,
-    channel::{Channel, Sender},
-};
-use gpio::{Level, Output};
 use heapless::Vec;
 use rand::{
     rngs::{SmallRng, StdRng},
     RngCore, SeedableRng,
 };
+
+use cyw43::PowerManagementMode;
+use cyw43_pio::PioSpi;
+use embassy_executor::Spawner;
+use embassy_futures::{
+    select::{select3, Either3},
+    yield_now,
+};
+use embassy_net::{dns::DnsQueryType, tcp::TcpSocket, Config, Stack, StackResources};
+use embassy_rp::{
+    bind_interrupts,
+    clocks::RoscRng,
+    gpio::{Level, Output},
+    peripherals::{DMA_CH0, PIN_23, PIN_25, PIO0, UART0},
+    pio::{self, Pio},
+    uart::{self, BufferedUartRx, Parity},
+};
+use embassy_sync::{
+    blocking_mutex::raw::NoopRawMutex,
+    channel::{Channel, Sender},
+};
+use embassy_time::{Duration, Ticker, Timer};
+use embedded_io_async::Read;
+
+use dsmr5::Readout;
+use nourl::Url;
 use rust_mqtt::{
     client::{
         client::MqttClient,
@@ -45,6 +42,8 @@ use rust_mqtt::{
 };
 use serde::Deserialize;
 use static_cell::make_static;
+
+use defmt::{debug, error, info, trace, warn, Format};
 
 use {defmt_rtt as _, panic_probe as _};
 
@@ -217,7 +216,7 @@ async fn main(spawner: Spawner) {
     let stack = make_static!(Stack::new(
         net_device,
         config,
-        make_static!(StackResources::<2>::new()),
+        make_static!(StackResources::<6>::new()),
         rng.next_u64(),
     ));
 
@@ -245,7 +244,11 @@ async fn main(spawner: Spawner) {
 
     let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
     // socket.set_timeout(Some(Duration::from_secs(10)));
-    let addr = IpEndpoint::from_str(env!("MQTT_ADDRESS")).unwrap();
+    let url = Url::parse(env!("MQTT_ADDRESS")).unwrap();
+    debug!("MQTT URL: {}", url);
+    let ip = stack.dns_query(url.host(), DnsQueryType::A).await.unwrap()[0];
+    let addr = (ip, url.port_or_default());
+    debug!("MQTT ADDR: {}", addr);
 
     while let Err(e) = socket.connect(addr).await {
         warn!("Connect error: {:?}", e);
@@ -329,7 +332,12 @@ async fn main(spawner: Spawner) {
                     }
                 };
 
-                info!("{}", message);
+                trace!("UpdateMessage: {}", message);
+
+                let url = Url::parse(message.url).unwrap();
+                let ip = stack.dns_query(url.host(), DnsQueryType::A).await;
+
+                debug!("Update IP: {}", ip);
             }
         }
     }
