@@ -1106,6 +1106,7 @@ checksum = "43794a0ace135be66a25d3ae77d41b91615fb68ae937f904090203e81f755b65"
 [[package]]
 name = "nourl"
 version = "0.1.1"
+source = "git+https://git.huizinga.dev/Dreaded_X/nourl#52d92f804d06f9d4745bf83e4b9201cbd825b481"
 dependencies = [
  "defmt",
 ]
@@ -1455,6 +1456,7 @@ dependencies = [
 [[package]]
 name = "rust-mqtt"
 version = "0.1.5"
+source = "git+https://git.huizinga.dev/Dreaded_X/rust-mqtt#a040fef484227697a7b3bfa45f990a84d2c47c61"
 dependencies = [
  "defmt",
  "embedded-io-async",
