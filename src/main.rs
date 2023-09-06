@@ -52,6 +52,7 @@ use rust_mqtt::{
 use serde::Deserialize;
 use static_cell::make_static;
 
+use const_format::formatcp;
 use defmt::{debug, error, info, warn, Debug2Format, Format};
 
 use {defmt_rtt as _, panic_probe as _};
@@ -60,6 +61,11 @@ bind_interrupts!(struct Irqs {
     UART0_IRQ => uart::BufferedInterruptHandler<UART0>;
     PIO0_IRQ_0 => pio::InterruptHandler<PIO0>;
 });
+
+const ID: &str = env!("ID");
+const TOPIC_BASE: &str = formatcp!("pico/{}", ID);
+const TOPIC_STATUS: &str = formatcp!("{}/status", TOPIC_BASE);
+const TOPIC_UPDATE: &str = formatcp!("{}/update", TOPIC_BASE);
 
 #[derive(Format, Deserialize)]
 struct UpdateMessage<'a> {
@@ -281,9 +287,9 @@ async fn main(spawner: Spawner) {
     config.add_username(env!("MQTT_USERNAME"));
     config.add_password(env!("MQTT_PASSWORD"));
     config.add_max_subscribe_qos(QualityOfService::QoS1);
-    config.add_client_id("pico");
+    config.add_client_id(ID);
     // Leads to InsufficientBufferSize error
-    config.add_will("pico/test", b"disconnected", true);
+    config.add_will(TOPIC_STATUS, b"disconnected", true);
 
     let mut recv_buffer = [0; 1024];
     let mut write_buffer = [0; 4096];
@@ -308,11 +314,11 @@ async fn main(spawner: Spawner) {
     updater.mark_booted().unwrap();
 
     client
-        .send_message("pico/test", b"connected", QualityOfService::QoS1, true)
+        .send_message(TOPIC_STATUS, b"connected", QualityOfService::QoS1, true)
         .await
         .unwrap();
 
-    client.subscribe_to_topic("pico/test/update").await.unwrap();
+    client.subscribe_to_topic(TOPIC_UPDATE).await.unwrap();
 
     // Turn LED off when connected
     control.gpio_set(0, false).await;
@@ -337,7 +343,7 @@ async fn main(spawner: Spawner) {
                     .expect("The buffer should be large enough to contain all the data");
 
                 client
-                    .send_message("pico/test", &msg, QualityOfService::QoS1, false)
+                    .send_message(TOPIC_BASE, &msg, QualityOfService::QoS1, false)
                     .await
                     .unwrap();
             }
@@ -419,7 +425,7 @@ where
 
     debug!("Preparing updater...");
     client
-        .send_message("pico/test", b"preparing", QualityOfService::QoS1, false)
+        .send_message(TOPIC_STATUS, b"preparing", QualityOfService::QoS1, false)
         .await
         .unwrap();
 
@@ -430,7 +436,7 @@ where
 
     debug!("Updater prepared!");
     client
-        .send_message("pico/test", b"prepared", QualityOfService::QoS1, false)
+        .send_message(TOPIC_STATUS, b"prepared", QualityOfService::QoS1, false)
         .await
         .unwrap();
 
@@ -445,7 +451,7 @@ where
         offset += read as u32;
     }
     client
-        .send_message("pico/test", b"written", QualityOfService::QoS1, false)
+        .send_message(TOPIC_STATUS, b"written", QualityOfService::QoS1, false)
         .await
         .unwrap();
     debug!("Total size: {}", offset);
@@ -453,7 +459,7 @@ where
     updater.mark_updated().unwrap();
 
     client
-        .send_message("pico/test", b"restarting", QualityOfService::QoS1, false)
+        .send_message(TOPIC_STATUS, b"restarting", QualityOfService::QoS1, false)
         .await
         .unwrap();
 
