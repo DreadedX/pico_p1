@@ -83,6 +83,7 @@ nourl = { version = "0.1.1", features = ["defmt"] }
 reqwless = { version = "0.5.0", features = ["defmt"] }
 embedded-storage = "0.3.0"
 const_format = "0.2.31"
+git-version = "0.3.5"
 
 [patch.crates-io]
 embassy-executor = { git = "https://github.com/embassy-rs/embassy" }

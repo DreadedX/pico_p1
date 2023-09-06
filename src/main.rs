@@ -30,7 +30,7 @@ use embassy_rp::{
     uart::{self, BufferedUartRx, Parity},
 };
 use embassy_sync::{
-    blocking_mutex::{Mutex, raw::NoopRawMutex},
+    blocking_mutex::{raw::NoopRawMutex, Mutex},
     channel::{Channel, Sender},
 };
 use embassy_time::{Duration, Ticker, Timer};
@@ -49,11 +49,11 @@ use rust_mqtt::{
     },
     packet::v5::publish_packet::QualityOfService,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use static_cell::make_static;
 
 use const_format::formatcp;
-use defmt::{debug, error, info, warn, Debug2Format, Format};
+use defmt::{debug, error, info, warn, Debug2Format};
 
 use {defmt_rtt as _, panic_probe as _};
 
@@ -66,8 +66,9 @@ const ID: &str = env!("ID");
 const TOPIC_BASE: &str = formatcp!("pico/{}", ID);
 const TOPIC_STATUS: &str = formatcp!("{}/status", TOPIC_BASE);
 const TOPIC_UPDATE: &str = formatcp!("{}/update", TOPIC_BASE);
+const VERSION: &str = git_version::git_version!();
 
-#[derive(Format, Deserialize)]
+#[derive(Deserialize)]
 struct UpdateMessage<'a> {
     url: &'a str,
 }
@@ -75,6 +76,24 @@ struct UpdateMessage<'a> {
 impl UpdateMessage<'_> {
     fn get_url(&self) -> String<1024> {
         self.url.into()
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case", tag = "status")]
+enum Status<'a> {
+    Connected { version: &'a str },
+    Disconnected,
+    PreparingUpdate,
+    Erasing,
+    Writing { progress: u32 },
+    UpdateComplete,
+}
+
+impl Status<'_> {
+    fn vec(&self) -> Vec<u8, 1024> {
+        serde_json_core::to_vec(self)
+            .expect("The buffer should be large enough to contain all the data")
     }
 }
 
@@ -289,7 +308,8 @@ async fn main(spawner: Spawner) {
     config.add_max_subscribe_qos(QualityOfService::QoS1);
     config.add_client_id(ID);
     // Leads to InsufficientBufferSize error
-    config.add_will(TOPIC_STATUS, b"disconnected", true);
+    let msg: &Vec<_, 1024> = make_static!(Status::Disconnected.vec());
+    config.add_will(TOPIC_STATUS, &msg, true);
 
     let mut recv_buffer = [0; 1024];
     let mut write_buffer = [0; 4096];
@@ -313,8 +333,9 @@ async fn main(spawner: Spawner) {
     // We wait with marking as booted until everything is connected
     updater.mark_booted().unwrap();
 
+    let status = Status::Connected { version: VERSION }.vec();
     client
-        .send_message(TOPIC_STATUS, b"connected", QualityOfService::QoS1, true)
+        .send_message(TOPIC_STATUS, &status, QualityOfService::QoS1, true)
         .await
         .unwrap();
 
@@ -392,13 +413,18 @@ async fn attempt_update<T, const MAX_PROPERTIES: usize, R, F>(
     updater: &mut BlockingFirmwareUpdater<'_, F, F>,
     client: &mut MqttClient<'_, T, MAX_PROPERTIES, R>,
     url: Url<'_>,
-)
-where
+) where
     T: embedded_io_async::Write + embedded_io_async::Read,
     R: rand::RngCore,
     F: NorFlash,
 {
-    info!("Installing OTA...");
+    info!("Preparing for OTA...");
+    let status = Status::PreparingUpdate.vec();
+    client
+        .send_message(TOPIC_STATUS, &status, QualityOfService::QoS1, false)
+        .await
+        .unwrap();
+
     let ip = stack.dns_query(url.host(), DnsQueryType::A).await.unwrap()[0];
 
     let mut rx_buffer = [0; 4096 * 2];
@@ -423,9 +449,10 @@ where
 
     let mut body = resp.body().reader();
 
-    debug!("Preparing updater...");
+    debug!("Erasing flash...");
+    let status = Status::Erasing.vec();
     client
-        .send_message(TOPIC_STATUS, b"preparing", QualityOfService::QoS1, false)
+        .send_message(TOPIC_STATUS, &status, QualityOfService::QoS1, false)
         .await
         .unwrap();
 
@@ -434,9 +461,10 @@ where
         .map_err(|e| warn!("E: {:?}", Debug2Format(&e)))
         .unwrap();
 
-    debug!("Updater prepared!");
+    debug!("Writing...");
+    let status = Status::Writing { progress: 0 }.vec();
     client
-        .send_message(TOPIC_STATUS, b"prepared", QualityOfService::QoS1, false)
+        .send_message(TOPIC_STATUS, &status, QualityOfService::QoS1, false)
         .await
         .unwrap();
 
@@ -446,20 +474,23 @@ where
         if read == 0 {
             break;
         }
-        debug!("Chunk size: {}", read);
+        debug!("Writing chunk: {}", read);
         writer.write(offset, &buffer.0[..read]).unwrap();
         offset += read as u32;
+
+        let status = Status::Writing { progress: offset }.vec();
+        client
+            .send_message(TOPIC_STATUS, &status, QualityOfService::QoS1, false)
+            .await
+            .unwrap();
     }
-    client
-        .send_message(TOPIC_STATUS, b"written", QualityOfService::QoS1, false)
-        .await
-        .unwrap();
     debug!("Total size: {}", offset);
 
     updater.mark_updated().unwrap();
 
+    let status = Status::UpdateComplete.vec();
     client
-        .send_message(TOPIC_STATUS, b"restarting", QualityOfService::QoS1, false)
+        .send_message(TOPIC_STATUS, &status, QualityOfService::QoS1, false)
         .await
         .unwrap();
 
