@@ -2,7 +2,11 @@
 #![no_main]
 #![feature(type_alias_impl_trait)]
 
-use heapless::Vec;
+use core::cell::RefCell;
+
+use embassy_boot_rp::{AlignedBuffer, BlockingFirmwareUpdater, FirmwareUpdaterConfig};
+use embedded_storage::nor_flash::NorFlash;
+use heapless::{String, Vec};
 use rand::{
     rngs::{SmallRng, StdRng},
     RngCore, SeedableRng,
@@ -19,13 +23,14 @@ use embassy_net::{dns::DnsQueryType, tcp::TcpSocket, Config, Stack, StackResourc
 use embassy_rp::{
     bind_interrupts,
     clocks::RoscRng,
+    flash::{Flash, WRITE_SIZE},
     gpio::{Level, Output},
     peripherals::{DMA_CH0, PIN_23, PIN_25, PIO0, UART0},
     pio::{self, Pio},
     uart::{self, BufferedUartRx, Parity},
 };
 use embassy_sync::{
-    blocking_mutex::raw::NoopRawMutex,
+    blocking_mutex::{Mutex, raw::NoopRawMutex},
     channel::{Channel, Sender},
 };
 use embassy_time::{Duration, Ticker, Timer};
@@ -33,6 +38,10 @@ use embedded_io_async::Read;
 
 use dsmr5::Readout;
 use nourl::Url;
+use reqwless::{
+    request::{Method, Request, RequestBuilder},
+    response::Response,
+};
 use rust_mqtt::{
     client::{
         client::MqttClient,
@@ -43,7 +52,7 @@ use rust_mqtt::{
 use serde::Deserialize;
 use static_cell::make_static;
 
-use defmt::{debug, error, info, trace, warn, Format};
+use defmt::{debug, error, info, warn, Debug2Format, Format};
 
 use {defmt_rtt as _, panic_probe as _};
 
@@ -55,6 +64,12 @@ bind_interrupts!(struct Irqs {
 #[derive(Format, Deserialize)]
 struct UpdateMessage<'a> {
     url: &'a str,
+}
+
+impl UpdateMessage<'_> {
+    fn get_url(&self) -> String<1024> {
+        self.url.into()
+    }
 }
 
 #[embassy_executor::task]
@@ -239,7 +254,7 @@ async fn main(spawner: Spawner) {
     let cfg = wait_for_config(stack).await;
     info!("IP Address: {}", cfg.address.address());
 
-    let mut rx_buffer = [0; 4096];
+    let mut rx_buffer = [0; 1024];
     let mut tx_buffer = [0; 4096];
 
     let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
@@ -270,7 +285,7 @@ async fn main(spawner: Spawner) {
     // Leads to InsufficientBufferSize error
     config.add_will("pico/test", b"disconnected", true);
 
-    let mut recv_buffer = [0; 4096];
+    let mut recv_buffer = [0; 1024];
     let mut write_buffer = [0; 4096];
 
     let mut client =
@@ -280,8 +295,20 @@ async fn main(spawner: Spawner) {
     client.connect_to_broker().await.unwrap();
     info!("MQTT Connected!");
 
+    // TODO: Ideally we use async flash
+    // This has issues with alignment right now
+    let flash = Flash::<_, _, FLASH_SIZE>::new_blocking(p.FLASH);
+    let flash = Mutex::new(RefCell::new(flash));
+
+    let config = FirmwareUpdaterConfig::from_linkerfile_blocking(&flash);
+    let mut aligned = AlignedBuffer([0; WRITE_SIZE]);
+    let mut updater = BlockingFirmwareUpdater::new(config, &mut aligned.0);
+
+    // We wait with marking as booted until everything is connected
+    updater.mark_booted().unwrap();
+
     client
-        .send_message("pico/test", b"connected", QualityOfService::QoS0, true)
+        .send_message("pico/test", b"connected", QualityOfService::QoS1, true)
         .await
         .unwrap();
 
@@ -292,7 +319,6 @@ async fn main(spawner: Spawner) {
 
     let mut keep_alive = Ticker::every(Duration::from_secs(30));
     let receiver = channel.receiver();
-
     loop {
         match select3(
             keep_alive.next(),
@@ -311,7 +337,7 @@ async fn main(spawner: Spawner) {
                     .expect("The buffer should be large enough to contain all the data");
 
                 client
-                    .send_message("pico/test", &msg, QualityOfService::QoS0, false)
+                    .send_message("pico/test", &msg, QualityOfService::QoS1, false)
                     .await
                     .unwrap();
             }
@@ -332,12 +358,9 @@ async fn main(spawner: Spawner) {
                     }
                 };
 
-                trace!("UpdateMessage: {}", message);
-
-                let url = Url::parse(message.url).unwrap();
-                let ip = stack.dns_query(url.host(), DnsQueryType::A).await;
-
-                debug!("Update IP: {}", ip);
+                let url = message.get_url();
+                let url = Url::parse(url.as_str()).unwrap();
+                attempt_update(stack, &mut updater, &mut client, url).await;
             }
         }
     }
@@ -354,4 +377,90 @@ async fn wait_for_config(
 
         yield_now().await;
     }
+}
+
+const FLASH_SIZE: usize = 2 * 1024 * 1024;
+
+async fn attempt_update<T, const MAX_PROPERTIES: usize, R, F>(
+    stack: &'static Stack<cyw43::NetDriver<'static>>,
+    updater: &mut BlockingFirmwareUpdater<'_, F, F>,
+    client: &mut MqttClient<'_, T, MAX_PROPERTIES, R>,
+    url: Url<'_>,
+)
+where
+    T: embedded_io_async::Write + embedded_io_async::Read,
+    R: rand::RngCore,
+    F: NorFlash,
+{
+    info!("Installing OTA...");
+    let ip = stack.dns_query(url.host(), DnsQueryType::A).await.unwrap()[0];
+
+    let mut rx_buffer = [0; 4096 * 2];
+    let mut tx_buffer = [0; 1024];
+
+    let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
+    let addr = (ip, url.port_or_default());
+    debug!("Addr: {}", addr);
+    socket.connect(addr).await.unwrap();
+
+    debug!("Path: {}", url.path());
+    Request::get(url.path())
+        .build()
+        .write(&mut socket)
+        .await
+        .unwrap();
+
+    let mut headers = [0; 4096];
+    let resp = Response::read(&mut socket, Method::GET, &mut headers)
+        .await
+        .unwrap();
+
+    let mut body = resp.body().reader();
+
+    debug!("Preparing updater...");
+    client
+        .send_message("pico/test", b"preparing", QualityOfService::QoS1, false)
+        .await
+        .unwrap();
+
+    let writer = updater
+        .prepare_update()
+        .map_err(|e| warn!("E: {:?}", Debug2Format(&e)))
+        .unwrap();
+
+    debug!("Updater prepared!");
+    client
+        .send_message("pico/test", b"prepared", QualityOfService::QoS1, false)
+        .await
+        .unwrap();
+
+    let mut buffer = AlignedBuffer([0; 4096]);
+    let mut offset = 0;
+    while let Ok(read) = body.read(&mut buffer.0).await {
+        if read == 0 {
+            break;
+        }
+        debug!("Chunk size: {}", read);
+        writer.write(offset, &buffer.0[..read]).unwrap();
+        offset += read as u32;
+    }
+    client
+        .send_message("pico/test", b"written", QualityOfService::QoS1, false)
+        .await
+        .unwrap();
+    debug!("Total size: {}", offset);
+
+    updater.mark_updated().unwrap();
+
+    client
+        .send_message("pico/test", b"restarting", QualityOfService::QoS1, false)
+        .await
+        .unwrap();
+
+    client.disconnect().await.unwrap();
+
+    info!("Restarting in 5 seconds...");
+    Timer::after(Duration::from_secs(5)).await;
+
+    cortex_m::peripheral::SCB::sys_reset();
 }

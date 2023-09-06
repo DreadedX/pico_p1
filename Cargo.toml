@@ -27,6 +27,8 @@ embassy-rp = { version = "0.1", features = [
 	"time-driver",
 	"critical-section-impl",
 ] }
+embassy-boot-rp = { version = "0.1", features = ["nightly", "defmt"] }
+embassy-boot = { version = "0.1", features = ["nightly", "defmt"] }
 embassy-time = { version = "0.1", features = [
 	"defmt",
 	"unstable-traits",
@@ -78,6 +80,8 @@ smoltcp = { version = "0.10.0", default-features = false, features = [
 	"dns-max-server-count-4",
 ] }
 nourl = { version = "0.1.1", features = ["defmt"] }
+reqwless = { version = "0.5.0", features = ["defmt"] }
+embedded-storage = "0.3.0"
 
 [patch.crates-io]
 embassy-executor = { git = "https://github.com/embassy-rs/embassy" }
@@ -87,11 +91,13 @@ embassy-usb = { git = "https://github.com/embassy-rs/embassy" }
 embassy-net = { git = "https://github.com/embassy-rs/embassy" }
 embassy-sync = { git = "https://github.com/embassy-rs/embassy" }
 embassy-futures = { git = "https://github.com/embassy-rs/embassy" }
-
 embassy-boot-rp = { git = "https://github.com/embassy-rs/embassy" }
+embassy-boot = { git = "https://github.com/embassy-rs/embassy" }
 
 rust-mqtt = { git = "https://git.huizinga.dev/Dreaded_X/rust-mqtt" }
 nourl = { git = "https://git.huizinga.dev/Dreaded_X/nourl" }
+
+reqwless = { path = "../reqwless" }
 
 [build-dependencies]
 dotenvy = "0.15"

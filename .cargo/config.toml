@@ -9,4 +9,4 @@ runner = "./wrapper.sh"
 target = "thumbv6m-none-eabi" # Cortex-M0 and Cortex-M0+
 
 [env]
-DEFMT_LOG = "warn,rp=trace,bootloader=trace"
+DEFMT_LOG = "warn,rp=info"
