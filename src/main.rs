@@ -25,9 +25,9 @@ use embassy_rp::{
     clocks::RoscRng,
     flash::{Flash, WRITE_SIZE},
     gpio::{Level, Output},
-    peripherals::{DMA_CH0, PIN_23, PIN_25, PIO0, UART0},
+    peripherals::{DMA_CH1, PIN_23, PIN_25, PIO0, UART0},
     pio::{self, Pio},
-    uart::{self, BufferedUartRx, Parity},
+    uart::{self, Async, Parity, UartRx},
 };
 use embassy_sync::{
     blocking_mutex::{raw::NoopRawMutex, Mutex},
@@ -58,7 +58,7 @@ use defmt::{debug, error, info, warn, Debug2Format};
 use {defmt_rtt as _, panic_probe as _};
 
 bind_interrupts!(struct Irqs {
-    UART0_IRQ => uart::BufferedInterruptHandler<UART0>;
+    UART0_IRQ => uart::InterruptHandler<UART0>;
     PIO0_IRQ_0 => pio::InterruptHandler<PIO0>;
 });
 
@@ -102,7 +102,7 @@ async fn wifi_task(
     runner: cyw43::Runner<
         'static,
         Output<'static, PIN_23>,
-        PioSpi<'static, PIN_25, PIO0, 0, DMA_CH0>,
+        PioSpi<'static, PIN_25, PIO0, 0, DMA_CH1>,
     >,
 ) -> ! {
     runner.run().await
@@ -113,14 +113,14 @@ async fn net_task(stack: &'static Stack<cyw43::NetDriver<'static>>) -> ! {
     stack.run().await
 }
 
-async fn get_readout(rx: &mut BufferedUartRx<'static, UART0>) -> Readout {
+async fn get_readout(rx: &mut UartRx<'static, UART0, Async>) -> Readout {
     let mut buffer: Vec<u8, 2048> = Vec::new();
     buffer.push(b'/').unwrap();
 
     let mut byte = [0; 1];
     debug!("Waiting for next telegram...");
     loop {
-        rx.read_exact(&mut byte).await.unwrap();
+        rx.read(&mut byte).await.unwrap();
 
         if byte[0] == b'/' {
             break;
@@ -137,7 +137,7 @@ async fn get_readout(rx: &mut BufferedUartRx<'static, UART0>) -> Readout {
             debug!("Start of CRC detected");
 
             let mut crc = [0; 4];
-            rx.read_exact(&mut crc).await.unwrap();
+            rx.read(&mut crc).await.unwrap();
 
             buffer.extend_from_slice(&crc).unwrap();
 
@@ -155,7 +155,7 @@ async fn get_readout(rx: &mut BufferedUartRx<'static, UART0>) -> Readout {
 
 #[embassy_executor::task]
 async fn uart_rx_task(
-    mut rx: BufferedUartRx<'static, UART0>,
+    mut rx: UartRx<'static, UART0, Async>,
     sender: Sender<'static, NoopRawMutex, dsmr5::state::State, 1>,
 ) {
     info!("Wating for serial data");
@@ -213,8 +213,7 @@ async fn main(spawner: Spawner) {
     config.parity = Parity::ParityNone;
     // config.invert_rx = true;
 
-    let buf = make_static!([0u8; 2048]);
-    let rx = BufferedUartRx::new_with_rts(p.UART0, Irqs, p.PIN_1, p.PIN_3, buf, config);
+    let rx = UartRx::new(p.UART0, p.PIN_17, Irqs, p.DMA_CH0, config);
 
     spawner.spawn(uart_rx_task(rx, channel.sender())).unwrap();
 
@@ -229,7 +228,7 @@ async fn main(spawner: Spawner) {
         cs,
         p.PIN_24,
         p.PIN_29,
-        p.DMA_CH0,
+        p.DMA_CH1,
     );
 
     let (fw, clm) = unsafe { get_firmware() };
