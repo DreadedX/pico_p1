@@ -96,9 +96,12 @@ embassy-futures = { git = "https://github.com/embassy-rs/embassy" }
 embassy-boot-rp = { git = "https://github.com/embassy-rs/embassy" }
 embassy-boot = { git = "https://github.com/embassy-rs/embassy" }
 
+# Updated to embedded-io 0.5.0
 rust-mqtt = { git = "https://git.huizinga.dev/Dreaded_X/rust-mqtt" }
+# Make mqtt:// and mqtts:// actually work
 nourl = { git = "https://git.huizinga.dev/Dreaded_X/nourl" }
 
+# Waiting for this to get updated to embedded-io 0.5 properly
 reqwless = { path = "../reqwless" }
 
 [build-dependencies]
