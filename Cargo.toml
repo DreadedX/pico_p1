@@ -28,14 +28,17 @@ embassy-rp = { version = "0.1", features = [
 	"critical-section-impl",
 ] }
 embassy-boot-rp = { version = "0.1", features = ["nightly", "defmt"] }
-embassy-boot = { version = "0.1", features = ["nightly", "defmt"] }
+embassy-boot = { version = "0.1", features = [
+	"nightly",
+	"defmt",
+	"ed25519-salty",
+] }
 embassy-time = { version = "0.1", features = [
 	"defmt",
 	"unstable-traits",
 	"defmt-timestamp-uptime",
 	"nightly",
 ] }
-embassy-usb = { version = "0.1", features = ["defmt"] }
 embassy-net = { version = "0.1", features = [
 	"tcp",
 	"dhcpv4",
@@ -54,11 +57,9 @@ cyw43-pio = { git = "https://github.com/embassy-rs/embassy", features = [
 	"defmt",
 ] }
 panic-probe = { version = "0.3", features = ["print-defmt"] }
-log = "0.4"
 static_cell = { version = "1.1", features = ["nightly"] }
 heapless = { version = "0.7.16", features = ["defmt", "serde"] }
 embedded-io-async = { version = "0.5", features = ["defmt-03"] }
-crc16 = "0.4"
 dsmr5 = "0.3"
 rust-mqtt = { version = "0.1.5", features = [
 	"defmt",
@@ -89,7 +90,6 @@ git-version = "0.3.5"
 embassy-executor = { git = "https://github.com/embassy-rs/embassy" }
 embassy-rp = { git = "https://github.com/embassy-rs/embassy" }
 embassy-time = { git = "https://github.com/embassy-rs/embassy" }
-embassy-usb = { git = "https://github.com/embassy-rs/embassy" }
 embassy-net = { git = "https://github.com/embassy-rs/embassy" }
 embassy-sync = { git = "https://github.com/embassy-rs/embassy" }
 embassy-futures = { git = "https://github.com/embassy-rs/embassy" }

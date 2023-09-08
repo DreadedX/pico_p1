@@ -53,7 +53,7 @@ use serde::{Deserialize, Serialize};
 use static_cell::make_static;
 
 use const_format::formatcp;
-use defmt::{debug, error, info, warn, Debug2Format};
+use defmt::{debug, error, info, trace, warn, Debug2Format};
 
 use {defmt_rtt as _, panic_probe as _};
 
@@ -67,6 +67,7 @@ const TOPIC_BASE: &str = formatcp!("pico/{}", ID);
 const TOPIC_STATUS: &str = formatcp!("{}/status", TOPIC_BASE);
 const TOPIC_UPDATE: &str = formatcp!("{}/update", TOPIC_BASE);
 const VERSION: &str = git_version::git_version!();
+const PUBLIC_SIGNING_KEY: &[u8] = include_bytes!("../key.pub");
 
 #[derive(Deserialize)]
 struct UpdateMessage<'a> {
@@ -467,25 +468,34 @@ async fn attempt_update<T, const MAX_PROPERTIES: usize, R, F>(
         .await
         .unwrap();
 
+    // The first 64 bytes of the file contain the signature
+    let mut signature = [0; 64];
+    body.read_exact(&mut signature).await.unwrap();
+
+    trace!("Signature: {:?}", signature);
+
     let mut buffer = AlignedBuffer([0; 4096]);
-    let mut offset = 0;
+    let mut size = 0;
     while let Ok(read) = body.read(&mut buffer.0).await {
         if read == 0 {
             break;
         }
         debug!("Writing chunk: {}", read);
-        writer.write(offset, &buffer.0[..read]).unwrap();
-        offset += read as u32;
+        writer.write(size, &buffer.0[..read]).unwrap();
+        size += read as u32;
 
-        let status = Status::Writing { progress: offset }.vec();
+        let status = Status::Writing { progress: size }.vec();
         client
             .send_message(TOPIC_STATUS, &status, QualityOfService::QoS1, false)
             .await
             .unwrap();
     }
-    debug!("Total size: {}", offset);
+    debug!("Total size: {}", size);
 
-    updater.mark_updated().unwrap();
+    updater.verify_and_mark_updated(PUBLIC_SIGNING_KEY, &signature, size).unwrap();
+
+    // Update mqtt message should be send using retain
+    // TODO: Clear the message
 
     let status = Status::UpdateComplete.vec();
     client
