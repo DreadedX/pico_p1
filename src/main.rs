@@ -88,6 +88,7 @@ enum Status<'a> {
     PreparingUpdate,
     Erasing,
     Writing { progress: u32 },
+    Verifying,
     UpdateComplete,
 }
 
@@ -492,7 +493,15 @@ async fn attempt_update<T, const MAX_PROPERTIES: usize, R, F>(
     }
     debug!("Total size: {}", size);
 
-    updater.verify_and_mark_updated(PUBLIC_SIGNING_KEY, &signature, size).unwrap();
+    let status = Status::Verifying.vec();
+    client
+        .send_message(TOPIC_STATUS, &status, QualityOfService::QoS1, false)
+        .await
+        .unwrap();
+
+    updater
+        .verify_and_mark_updated(PUBLIC_SIGNING_KEY, &signature, size)
+        .unwrap();
 
     // Update mqtt message should be send using retain
     // TODO: Clear the message
