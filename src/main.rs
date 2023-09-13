@@ -177,7 +177,7 @@ async fn uart_rx_task(
 /// Get the cyw43 firmware blobs
 ///
 /// # Safety
-/// When building with `exclude_firmwares` make sure to flash the firmwares using the following
+/// When building without `include_firmwares` make sure to flash the firmwares using the following
 /// commands:
 /// ```bash
 /// probe-rs download firmware/43439A0.bin --format bin --chip RP2040 --base-address 0x101BE000
@@ -185,7 +185,12 @@ async fn uart_rx_task(
 /// ```
 unsafe fn get_firmware() -> (&'static [u8], &'static [u8]) {
     cfg_if::cfg_if! {
-        if #[cfg(feature = "exclude_firmwares")] {
+        if #[cfg(feature = "include_firmwares")] {
+            let fw = include_bytes!("../firmware/43439A0.bin");
+            let clm = include_bytes!("../firmware/43439A0_clm.bin");
+
+            (fw, clm)
+        } else {
             // TODO: It would be nice if it could automatically get the correct size
             extern "C" {
                 #[link_name = "__fw_start"]
@@ -195,11 +200,6 @@ unsafe fn get_firmware() -> (&'static [u8], &'static [u8]) {
             }
 
             (&fw, &clm)
-        } else {
-            let fw = include_bytes!("../firmware/43439A0.bin");
-            let clm = include_bytes!("../firmware/43439A0_clm.bin");
-
-            (fw, clm)
         }
     }
 }
@@ -214,7 +214,10 @@ async fn main(spawner: Spawner) {
     // === UART ===
     let mut config = uart::Config::default();
     config.parity = Parity::ParityNone;
-    // config.invert_rx = true;
+    #[cfg(feature = "invert_rx")]
+    {
+        config.invert_rx = true;
+    }
 
     let rx = UartRx::new(p.UART0, p.PIN_17, Irqs, p.DMA_CH0, config);
 

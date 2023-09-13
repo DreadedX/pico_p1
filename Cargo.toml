@@ -114,7 +114,8 @@ dotenvy = "0.15"
 [features]
 # With this feature enabled the cyw43 fiwmares are not included in the build and need to be manually flashed
 # This helps speed up development
-exclude_firmwares = []
+include_firmwares = []
+invert_rx = []
 
 [profile.release]
 debug = true
