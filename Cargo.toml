@@ -87,6 +87,8 @@ embedded-tls = { version = "0.15.0", default-features = false, features = [
 	"defmt",
 ] }
 
+updater = { path = "../iot_tools/updater" }
+
 [patch.crates-io]
 embassy-executor = { git = "https://github.com/embassy-rs/embassy" }
 embassy-rp = { git = "https://github.com/embassy-rs/embassy" }

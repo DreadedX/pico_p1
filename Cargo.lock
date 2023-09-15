@@ -1778,6 +1778,7 @@ dependencies = [
  "serde-json-core",
  "smoltcp",
  "static_cell",
+ "updater",
 ]
 
 [[package]]
@@ -2129,6 +2130,30 @@ checksum = "fc1de2c688dc15305988b563c3854064043356019f97a4b46276fe734c4f07ea"
 dependencies = [
  "crypto-common",
  "subtle",
+]
+
+[[package]]
+name = "updater"
+version = "0.1.0"
+dependencies = [
+ "cortex-m",
+ "cortex-m-rt",
+ "defmt",
+ "defmt-rtt",
+ "embassy-boot",
+ "embassy-net",
+ "embassy-time",
+ "embedded-io-async",
+ "embedded-storage",
+ "embedded-tls",
+ "heapless 0.7.16",
+ "nourl",
+ "rand_core",
+ "reqwless",
+ "rust-mqtt",
+ "serde",
+ "serde-json-core",
+ "static_cell",
 ]
 
 [[package]]
