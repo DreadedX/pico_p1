@@ -3,9 +3,6 @@ name = "rp"
 version = "0.1.0"
 edition = "2021"
 
-[workspace]
-members = ["bootloader"]
-
 [dependencies]
 cortex-m = { version = "0.7", features = ["inline-asm"] }
 cortex-m-rt = "0.7"
