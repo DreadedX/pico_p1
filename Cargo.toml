@@ -16,7 +16,7 @@ embassy-executor = { version = "0.3", features = [
 	"nightly",
 	"integrated-timers",
 ] }
-embassy-embedded-hal = { version = "0.1", features = ["defmt", "nightly"]}
+embassy-embedded-hal = { version = "0.1", features = ["defmt", "nightly"] }
 embassy-rp = { version = "0.1", features = [
 	"defmt",
 	"unstable-traits",
@@ -57,7 +57,6 @@ cyw43-pio = { git = "https://github.com/embassy-rs/embassy", features = [
 panic-probe = { version = "0.3", features = ["print-defmt"] }
 static_cell = { version = "1.1", features = ["nightly"] }
 heapless = { version = "0.7.16", features = ["defmt", "serde"] }
-embedded-io-async = { version = "0.5", features = ["defmt-03"] }
 dsmr5 = "0.3"
 rust-mqtt = { version = "0.1.5", features = [
 	"defmt",
@@ -79,14 +78,8 @@ smoltcp = { version = "0.10.0", default-features = false, features = [
 	"dns-max-server-count-4",
 ] }
 nourl = { version = "0.1.1", features = ["defmt"] }
-reqwless = { version = "0.5.0", features = ["defmt"] }
-embedded-storage = "0.3.0"
 const_format = "0.2.31"
 git-version = "0.3.5"
-embedded-tls = { version = "0.15.0", default-features = false, features = [
-	"async",
-	"defmt",
-] }
 
 updater = { path = "../iot_tools/updater" }
 
