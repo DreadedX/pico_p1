@@ -16,6 +16,7 @@ embassy-executor = { version = "0.3", features = [
 	"nightly",
 	"integrated-timers",
 ] }
+embassy-embedded-hal = { version = "0.1", features = ["defmt", "nightly"]}
 embassy-rp = { version = "0.1", features = [
 	"defmt",
 	"unstable-traits",
@@ -91,6 +92,7 @@ updater = { path = "../iot_tools/updater" }
 
 [patch.crates-io]
 embassy-executor = { git = "https://github.com/embassy-rs/embassy" }
+embassy-embedded-hal = { git = "https://github.com/embassy-rs/embassy" }
 embassy-rp = { git = "https://github.com/embassy-rs/embassy" }
 embassy-time = { git = "https://github.com/embassy-rs/embassy" }
 embassy-net = { git = "https://github.com/embassy-rs/embassy" }

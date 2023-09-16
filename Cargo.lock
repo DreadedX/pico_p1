@@ -188,21 +188,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bootloader"
-version = "0.1.0"
-dependencies = [
- "cortex-m",
- "cortex-m-rt",
- "defmt",
- "defmt-rtt",
- "embassy-boot-rp",
- "embassy-rp",
- "embassy-sync",
- "embassy-time",
- "embedded-storage",
-]
-
-[[package]]
 name = "buffered-io"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -293,7 +278,6 @@ checksum = "8ec610d8f49840a5b376c69663b6369e71f4b34484b9b2eb29fb918d92516cb9"
 dependencies = [
  "bare-metal",
  "bitfield",
- "critical-section",
  "embedded-hal 0.2.7",
  "volatile-register",
 ]
@@ -634,6 +618,7 @@ name = "embassy-embedded-hal"
 version = "0.1.0"
 source = "git+https://github.com/embassy-rs/embassy#af7c93abba768057f1d3299c7b4f4aa4501b3e56"
 dependencies = [
+ "defmt",
  "embassy-futures",
  "embassy-sync",
  "embassy-time",
@@ -1247,6 +1232,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9e0384b61958566e926dc50660321d12159025e767c18e043daf26b70104c39"
 
 [[package]]
+name = "impl-tools"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d82c305b1081f1a99fda262883c788e50ab57d36c00830bdd7e0a82894ad965c"
+dependencies = [
+ "autocfg",
+ "impl-tools-lib",
+ "proc-macro-error",
+ "syn 2.0.29",
+]
+
+[[package]]
+name = "impl-tools-lib"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "85d3946d886eaab0702fa0c6585adcced581513223fa9df7ccfabbd9fa331a88"
+dependencies = [
+ "proc-macro-error",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.29",
+]
+
+[[package]]
 name = "indexmap"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1758,6 +1767,7 @@ dependencies = [
  "dsmr5",
  "embassy-boot",
  "embassy-boot-rp",
+ "embassy-embedded-hal",
  "embassy-executor",
  "embassy-futures",
  "embassy-net",
@@ -2141,12 +2151,14 @@ dependencies = [
  "defmt",
  "defmt-rtt",
  "embassy-boot",
+ "embassy-futures",
  "embassy-net",
  "embassy-time",
  "embedded-io-async",
  "embedded-storage",
  "embedded-tls",
  "heapless 0.7.16",
+ "impl-tools",
  "nourl",
  "rand_core",
  "reqwless",

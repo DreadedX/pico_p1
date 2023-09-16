@@ -2,10 +2,10 @@
 #![no_main]
 #![feature(type_alias_impl_trait)]
 
-use core::cell::RefCell;
+use core::{cell::RefCell, str::from_utf8};
 
 use embassy_boot_rp::{AlignedBuffer, BlockingFirmwareUpdater, FirmwareUpdaterConfig};
-use heapless::{String, Vec};
+use heapless::Vec;
 use rand::{
     rngs::{SmallRng, StdRng},
     RngCore, SeedableRng,
@@ -43,7 +43,6 @@ use rust_mqtt::{
     },
     packet::v5::publish_packet::QualityOfService,
 };
-use serde::Deserialize;
 use static_cell::make_static;
 
 use const_format::formatcp;
@@ -64,17 +63,6 @@ const VERSION: &str = git_version::git_version!();
 const PUBLIC_SIGNING_KEY: &[u8] = include_bytes!("../key.pub");
 
 const FLASH_SIZE: usize = 2 * 1024 * 1024;
-
-#[derive(Deserialize)]
-struct UpdateMessage<'a> {
-    url: &'a str,
-}
-
-impl UpdateMessage<'_> {
-    fn get_url(&self) -> String<1024> {
-        self.url.into()
-    }
-}
 
 #[embassy_executor::task]
 async fn wifi_task(
@@ -187,6 +175,17 @@ async fn main(spawner: Spawner) {
 
     let channel = make_static!(Channel::<NoopRawMutex, _, 1>::new());
 
+    // TODO: Ideally we use async flash
+    // This has issues with alignment right now
+    let flash = Flash::<_, _, FLASH_SIZE>::new_blocking(p.FLASH);
+    let flash = Mutex::new(RefCell::new(flash));
+
+    let config = FirmwareUpdaterConfig::from_linkerfile_blocking(&flash);
+    let mut aligned = AlignedBuffer([0; WRITE_SIZE]);
+    let updater = BlockingFirmwareUpdater::new(config, &mut aligned.0);
+
+    let mut updater = updater::Updater::new(updater, TOPIC_STATUS, VERSION, PUBLIC_SIGNING_KEY);
+
     // === UART ===
     let mut config = uart::Config::default();
     config.parity = Parity::ParityNone;
@@ -276,8 +275,6 @@ async fn main(spawner: Spawner) {
     }
     info!("TCP Connected!");
 
-    let up = updater::Updater::new(TOPIC_STATUS, TOPIC_UPDATE, VERSION, PUBLIC_SIGNING_KEY);
-
     let mut config = ClientConfig::new(
         MqttVersion::MQTTv5,
         // Use fast and simple PRNG to generate packet identifiers, there is no need for this to be
@@ -289,7 +286,7 @@ async fn main(spawner: Spawner) {
     config.add_password(env!("MQTT_PASSWORD"));
     config.add_max_subscribe_qos(QualityOfService::QoS1);
     config.add_client_id(ID);
-    up.add_will(&mut config);
+    updater.add_will(&mut config);
 
     let mut recv_buffer = [0; 1024];
     let mut write_buffer = [0; 1024];
@@ -301,19 +298,8 @@ async fn main(spawner: Spawner) {
     client.connect_to_broker().await.unwrap();
     info!("MQTT Connected!");
 
-    // TODO: Ideally we use async flash
-    // This has issues with alignment right now
-    let flash = Flash::<_, _, FLASH_SIZE>::new_blocking(p.FLASH);
-    let flash = Mutex::new(RefCell::new(flash));
-
-    let config = FirmwareUpdaterConfig::from_linkerfile_blocking(&flash);
-    let mut aligned = AlignedBuffer([0; WRITE_SIZE]);
-    let mut updater = BlockingFirmwareUpdater::new(config, &mut aligned.0);
-
-    // We wait with marking as booted until everything is connected
-    updater.mark_booted().unwrap();
-
-    up.ready(&mut client).await;
+    client.subscribe_to_topic(TOPIC_UPDATE).await.unwrap();
+    updater.ready(&mut client).await.unwrap();
 
     // Turn LED off when connected
     control.gpio_set(0, false).await;
@@ -342,26 +328,39 @@ async fn main(spawner: Spawner) {
                     .await
                     .unwrap();
             }
-            Either3::Third(message) => {
-                let message = match message {
-                    Ok(message) => message,
-                    Err(err) => {
-                        error!("Failed to receive MQTT message: {}", err);
-                        continue;
-                    }
-                };
-
-                let message = match serde_json_core::from_slice::<UpdateMessage>(message.1) {
-                    Ok((message, _)) => message,
+            Either3::Third(Ok((TOPIC_UPDATE, url))) => {
+                let url: Vec<_, 256> = match Vec::from_slice(url) {
+                    Ok(url) => url,
                     Err(_) => {
-                        error!("Unable to parse update message");
+                        error!("URL is longer then buffer size");
+                        continue;
+                    }
+                };
+                let url = match from_utf8(&url) {
+                    Ok(url) => url,
+                    Err(err) => {
+                        error!("Url is not valid utf-8 string: {}", Display2Format(&err));
+                        continue;
+                    }
+                };
+                let url = match Url::parse(url) {
+                    Ok(url) => url,
+                    Err(err) => {
+                        error!("Failed to parse url: {}", err);
                         continue;
                     }
                 };
 
-                let url = message.get_url();
-                let url = Url::parse(url.as_str()).unwrap();
-                up.update(stack, &mut updater, &mut rng, &mut client, url).await;
+                if let Err(err) = updater.update(url, stack, &mut rng, &mut client).await {
+                    error!("Update failed: {}", err)
+                }
+            }
+            Either3::Third(Ok(_)) => {
+                warn!("No handler for mqtt message");
+            }
+            Either3::Third(Err(err)) => {
+                error!("Failed to receive MQTT message: {}", err);
+                continue;
             }
         }
     }
@@ -379,4 +378,3 @@ async fn wait_for_config(
         yield_now().await;
     }
 }
-
